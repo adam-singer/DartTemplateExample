@@ -35,7 +35,7 @@ echo "Copy & Paste import statements"
 echo 
 for i in "$LIST"; do
      dartTemplateName=`echo $i|sed 's/\.tmpl$//g'`
-     echo \#import\('$dartTemplateName'\);
+     echo \#source\(\'${dartTemplateName}.dart\'\)\;
 done
 
 echo
