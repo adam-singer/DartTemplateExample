@@ -112,15 +112,15 @@ template Product(Person person) {
   final String complexTemplate = '''
 template ProductsForPerson(Person person, var products) {
   <div>
-    ${with} person}
+    ${with} person pn}
       <div>
-        <span>\${name}</span>
+        <span>\${pn.name}</span>
         <span>-</span>
-        <span>\${age}</span>
+        <span>\${pn.age}</span>
       </div>
-      ${each} products}
+      ${each} products ps}
         <div>
-          <span>product=\${name},users=\${users}</span>
+          <span>product=\${ps.name},users=\${ps.users}</span>
         </div>
       ${endEach}
     ${endWith}
@@ -131,15 +131,15 @@ template ProductsForPerson(Person person, var products) {
   final String complexTemplate2 = '''
 template ProductsForPerson(Person person, var products) {
   <div>
-    ${with} person}
+    ${with} person pn}
       <div>
-        <span>\${name}</span>
+        <span>\${pn.name}</span>
         <span>-</span>
-        <span>\${age}</span>
+        <span>\${pn.age}</span>
       </div>
       <div>
-        ${each} products}
-          <span>product=\${name},users=\${users}</span>
+        ${each} products ps}
+          <span>product=\${ps.name},users=\${ps.users}</span>
         ${endEach}
       </div>
     ${endWith}
@@ -162,19 +162,19 @@ template ProductsForPerson(Person person, var products) {
     }
   }
   <div>
-    ${with} person}
+    ${with} person pn}
       <div>
-        <span>\${name}</span>
+        <span>\${pn.name}</span>
         <span>-</span>
-        <span>\${age}</span>
+        <span>\${pn.age}</span>
       </div>
       <div>
-        ${each} products}
-          <div>product=\${name},users=\${users}</div>
-          ${each} products.sales}
+        ${each} products ps}
+          <div>product=\${ps.name},users=\${ps.users}</div>
+          ${each} products.sales pss}
             <div class="sales-item">
-              <span>\${country}</span>
-              <span class="ytd-sales">\\\$\${yearly}</span>
+              <span>\${pss.country}</span>
+              <span class="ytd-sales">\\\$\${pss.yearly}</span>
             </div>
           ${endEach}
         ${endEach}
@@ -204,24 +204,24 @@ template NameEntry(String name, int age) {
   final String complexTemplate4 = '''
 template DivisionSales(var divisions) {
   <div>
-    \${#each divisions}
+    \${#each divisions dv}
       <div>
-        <span>\${name}</span>
+        <span>\${dv.name}</span>
         <span>-</span>
-        <span>\${id}</span>
+        <span>\${dv.id}</span>
       </div>
       <div>
-        \${#each divisions.products}
+        \${#each divisions.products dvp}
           <div>
             <span var=productItem>&#9654;</span>
             <span>Product</span>
-            <span>\${name}</span>
-            <span>\${users}&nbsp;users</span>
+            <span>\${dvp.name}</span>
+            <span>\${dvp.users}&nbsp;users</span>
           </div>
-          \${#each products.sales}
+          \${#each products.sales pss}
             <div>
-              <span>\${country}</span>
-              <span>\\\$\${yearly}</span>
+              <span>\${pss.country}</span>
+              <span>\\\$\${pss.yearly}</span>
             </div>
           \${/each}
         \${/each}
@@ -295,24 +295,24 @@ template DivisionSales(var divisions) {
     }
   }
   <div>
-    \${#each divisions}
+    \${#each divisions dv}
       <div class="division-item">
-        <span>\${name}</span>
+        <span>\${dv.name}</span>
         <span>-</span>
-        <span>\${id}</span>
+        <span>\${dv.id}</span>
       </div>
       <div>
-        \${#each divisions.products}
+        \${#each divisions.products dvs}
           <div class="product-item">
             <span var=productZippy class="expand-collapse expand">&#9660;</span>
             <span class='product-title'>Product</span>
-            <span class="product-name">\${name}</span>
-            <span class="product-users" align=right>\${users}&nbsp;users</span>
+            <span class="product-name">\${dvs.name}</span>
+            <span class="product-users" align=right>\${dvs.users}&nbsp;users</span>
             <div class="show-sales">
-              \${#each products.sales}
+              \${#each products.sales pss}
                 <div class="sales-item">
-                  <span>\${country}</span>
-                  <span class="ytd-sales">\\\$\${yearly}</span>
+                  <span>\${pss.country}</span>
+                  <span class="ytd-sales">\\\$\${pss.yearly}</span>
                 </div>
               \${/each}
             </div>
