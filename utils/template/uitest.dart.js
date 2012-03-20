@@ -6241,7 +6241,7 @@ css_Parser.prototype.processTerm = function() {
         if (!(hne instanceof HexNumberException)) throw hne;
         this._css_error("Bad hex number", this._css_makeSpan(start));
       }
-      $throw(new FallThroughError());
+      break;
 
     case (60):
 
@@ -7044,7 +7044,12 @@ Tokenizer.prototype.next = function(inTag) {
     case this.tmplTokens.tokens.$index((12)):
     case this.tmplTokens.tokens.$index((13)):
 
-      return this.finishWhitespace();
+      if (inTag) {
+        return this.finishWhitespace();
+      }
+      else {
+        return this._finishToken((63));
+      }
 
     case this.tmplTokens.tokens.$index((1)):
 
@@ -7444,25 +7449,26 @@ Parser.prototype.processHTML = function(root) {
       }
     }
     else if (this._maybeEat((52))) {
-      if (this._peekIdentifier()) {
-        var commandName = this.identifier();
-        switch (commandName.get$name()) {
+      var commandName = this.processAsIdentifier();
+      if (commandName != null) {
+        switch (commandName.name) {
           case "each":
           case "with":
 
-            if (this._peekIdentifier()) {
-              var listName = this.identifier();
+            var listName = this.processAsIdentifier();
+            if ($ne$(listName)) {
+              var loopItem = this.processAsIdentifier();
               this._eat((7));
               var frag = new TemplateElement.fragment$ctor(this._makeSpan(this._peekToken.start));
               var docFrag = this.processHTML(frag);
               if (docFrag != null) {
                 var span = this._makeSpan(start);
                 var cmd = null;
-                if (commandName.get$name() == "each") {
-                  cmd = new TemplateEachCommand(listName, docFrag, span);
+                if (commandName.name == "each") {
+                  cmd = new TemplateEachCommand(listName, loopItem, docFrag, span);
                 }
-                else if (commandName.get$name() == "with") {
-                  cmd = new TemplateWithCommand(listName, docFrag, span);
+                else if (commandName.name == "with") {
+                  cmd = new TemplateWithCommand(listName, loopItem, docFrag, span);
                 }
                 stack.top().add$1(cmd);
                 stack.push(cmd);
@@ -7470,7 +7476,7 @@ Parser.prototype.processHTML = function(root) {
               this._eat((53));
               if (this._peekIdentifier()) {
                 commandName = this.identifier();
-                switch (commandName.get$name()) {
+                switch (commandName.name) {
                   case "each":
                   case "with":
                   case "if":
@@ -7484,9 +7490,9 @@ Parser.prototype.processHTML = function(root) {
 
                 }
                 var elem = stack.pop();
-                if ((elem instanceof TemplateEachCommand) && commandName.get$name() == "each") {
+                if ((elem instanceof TemplateEachCommand) && commandName.name == "each") {
                 }
-                else if ((elem instanceof TemplateWithCommand) && commandName.get$name() == "with") {
+                else if ((elem instanceof TemplateWithCommand) && commandName.name == "with") {
                 }
                 else {
                   var expectedCmd = null;
@@ -7517,7 +7523,19 @@ Parser.prototype.processHTML = function(root) {
 
           default:
 
-            this._error("Unknown template command");
+            var startPos = this._previousToken.end;
+            while (this._peek() != (7) && this._peek() != (1)) {
+              this._template_next(false);
+            }
+            if (this._peek() == (7)) {
+              var endPos = this._previousToken.end;
+              var callNode = new TemplateCall(commandName.name, this.source.get$text().substring(startPos, endPos), this._makeSpan(start));
+              stack.top().add$1(callNode);
+              this._template_next(false);
+            }
+            else {
+              this._error("Unknown template command");
+            }
 
         }
       }
@@ -7578,7 +7596,15 @@ Parser.prototype.processTextNodes = function() {
   var start = this._peekToken.start;
   var inExpression = false;
   var stringValue = new StringBufferImpl("");
-  var runningStart = this._peekToken.start;
+  if (this._previousToken.kind == (16)) {
+    if (this._peek() == (65)) {
+      this.tokenizer.set$index(this._previousToken.end);
+      this._template_next(false);
+    }
+    else if (this._peek() != (7)) {
+      stringValue.add(this._previousToken.source.get$text().substring(this._previousToken.end, this._peekToken.start));
+    }
+  }
   while (this._peek() != (15) && (this._peek() != (7) || (this._peek() == (7) && inExpression)) && this._peek() != (1)) {
     if (this._peek() == (51)) {
       if (stringValue.get$length() > (0)) {
@@ -7605,15 +7631,25 @@ Parser.prototype.processTextNodes = function() {
   return nodes;
 }
 // ********** Code for CGBlock **************
-function CGBlock(_indent, _blockType, _inEach) {
+function CGBlock(_indent, _blockType, _inEach, _localName) {
   this._indent = _indent;
   this._blockType = _blockType;
   this._inEach = _inEach;
+  this._localName = _localName;
   this._stmts = new Array();
   this.localIndex = (0);
 }
 CGBlock.prototype.get$isEach = function() {
   return this._blockType == (1);
+}
+CGBlock.prototype.get$isWith = function() {
+  return this._blockType == (2);
+}
+CGBlock.prototype.get$hasLocalName = function() {
+  return this._localName != null;
+}
+CGBlock.prototype.get$localName = function() {
+  return this._localName;
 }
 CGBlock.prototype.push = function(elem, parentName, exact) {
   var varName;
@@ -7691,13 +7727,13 @@ CGStatement.prototype.get$variableName = function() {
 CGStatement.prototype.globalDeclaration = function() {
   if (this.get$hasGlobalVariable()) {
     var spaces = Codegen.spaces(this._indent);
-    return (this._repeating) ? ("  List " + this.varName + ";    // Repeated elements.\r") : ("  var " + this.varName + ";\r");
+    return (this._repeating) ? ("  List " + this.varName + ";    // Repeated elements.\n") : ("  var " + this.varName + ";\n");
   }
   return "";
 }
 CGStatement.prototype.globalInitializers = function() {
   if (this.get$hasGlobalVariable() && this._repeating) {
-    return ("    " + this.varName + " = [];\r");
+    return ("    " + this.varName + " = [];\n");
   }
   return "";
 }
@@ -7717,7 +7753,7 @@ CGStatement.prototype.emitDartStatement = function() {
   var statement = new StringBufferImpl("");
   var spaces = Codegen.spaces(this._indent);
   if (this._exact) {
-    statement.add(("" + spaces + this._buff.toString() + ";\r"));
+    statement.add(("" + spaces + this._buff.toString() + ";\n"));
   }
   else {
     var localVar = "";
@@ -7731,19 +7767,30 @@ CGStatement.prototype.emitDartStatement = function() {
     else {
       localVar = "var ";
     }
-    if (tmpRepeat == null) {
-      statement.add(("" + spaces + localVar + this.varName + " = new Element.html('"));
+    if ((this._elem instanceof TemplateCall)) {
+      var cls = this._elem.get$toCall();
+      var params = this._elem.get$params();
+      statement.add(("\n" + spaces + "// Call template " + cls + ".\n"));
+      statement.add(("" + spaces + localVar + this.varName + " = new " + cls + params + ";\n"));
+      statement.add(("" + spaces + this.parentName + ".elements.add(" + this.varName + ".root);\n"));
     }
     else {
-      statement.add(("" + spaces + localVar + tmpRepeat + " = new Element.html('"));
-    }
-    statement.add(this._buff.toString());
-    if (tmpRepeat == null) {
-      statement.add(("');\r" + spaces + this.parentName + ".elements.add(" + this.varName + ");\r"));
-    }
-    else {
-      statement.add(("');\r" + spaces + this.parentName + ".elements.add(" + tmpRepeat + ");\r"));
-      statement.add(("" + spaces + this.varName + ".add(" + tmpRepeat + ");\r"));
+      var isTextNode = (this._elem instanceof TemplateText);
+      var createType = isTextNode ? "Text" : "Element.html";
+      if (tmpRepeat == null) {
+        statement.add(("" + spaces + localVar + this.varName + " = new " + createType + "('"));
+      }
+      else {
+        statement.add(("" + spaces + localVar + tmpRepeat + " = new " + createType + "('"));
+      }
+      statement.add(isTextNode ? this._buff.toString().trim() : this._buff.toString());
+      if (tmpRepeat == null) {
+        statement.add(("');\n" + spaces + this.parentName + ".elements.add(" + this.varName + ");\n"));
+      }
+      else {
+        statement.add(("');\n" + spaces + this.parentName + ".elements.add(" + tmpRepeat + ");\n"));
+        statement.add(("" + spaces + this.varName + ".add(" + tmpRepeat + ");\n"));
+      }
     }
   }
   return statement.toString();
@@ -7759,33 +7806,33 @@ Codegen.generate = function(templates, filename) {
   filename = fileParts.$index((0));
   var buff = new StringBufferImpl("");
   var injectId = (0);
-  buff.add("// Generated Dart class from HTML template.\r");
-  buff.add("// DO NOT EDIT.\r\r");
-  buff.add("String safeHTML(String html) {\r");
-  buff.add("  // TODO(terry): Escaping for XSS vulnerabilities TBD.\r");
-  buff.add("  return html;\r");
-  buff.add("}\r\r");
+  buff.add("// Generated Dart class from HTML template.\n");
+  buff.add("// DO NOT EDIT.\n\n");
+  buff.add("String safeHTML(String html) {\n");
+  buff.add("  // TODO(terry): Escaping for XSS vulnerabilities TBD.\n");
+  buff.add("  return html;\n");
+  buff.add("}\n\n");
   var addStylesheetFuncName = ("add_" + filename + "_templatesStyles");
   for (var $$i = templates.iterator(); $$i.hasNext(); ) {
     var template = $$i.next$0();
     var sig = template.get$signature();
     buff.add(Codegen._emitClass(sig.name, sig.params, template.get$content(), addStylesheetFuncName));
   }
-  buff.add("\r\r// Inject all templates stylesheet once into the head.\r");
-  buff.add(("bool " + filename + "_stylesheet_added = false;\r"));
-  buff.add(("void " + addStylesheetFuncName + "() {\r"));
-  buff.add(("  if (!" + filename + "_stylesheet_added) {\r"));
-  buff.add("    StringBuffer styles = new StringBuffer();\r\r");
-  buff.add("    // All templates stylesheet.\r");
+  buff.add("\n\n// Inject all templates stylesheet once into the head.\n");
+  buff.add(("bool " + filename + "_stylesheet_added = false;\n"));
+  buff.add(("void " + addStylesheetFuncName + "() {\n"));
+  buff.add(("  if (!" + filename + "_stylesheet_added) {\n"));
+  buff.add("    StringBuffer styles = new StringBuffer();\n\n");
+  buff.add("    // All templates stylesheet.\n");
   for (var $$i = templates.iterator(); $$i.hasNext(); ) {
     var template = $$i.next$0();
     var sig = template.get$signature();
-    buff.add(("    styles.add(" + sig.name + ".stylesheet);\r"));
+    buff.add(("    styles.add(" + sig.name + ".stylesheet);\n"));
   }
-  buff.add(("\r    " + filename + "_stylesheet_added = true;\r"));
-  buff.add("    document.head.elements.add(new Element.html('<style>${styles.toString()}</style>'));\r");
-  buff.add("  }\r");
-  buff.add("}\r");
+  buff.add(("\n    " + filename + "_stylesheet_added = true;\n"));
+  buff.add("    document.head.elements.add(new Element.html('<style>${styles.toString()}</style>'));\n");
+  buff.add("  }\n");
+  buff.add("}\n");
   return buff.toString();
 }
 Codegen._emitCSSSelectors = function(stylesheet) {
@@ -7826,32 +7873,48 @@ Codegen._emitCSSSelectors = function(stylesheet) {
   }
   var buff = new StringBufferImpl("");
   if (classes.get$length() > (0)) {
-    buff.add("\r  // CSS class selectors for this template.\r");
+    buff.add("\n  // CSS class selectors for this template.\n");
     for (var i = (0);
      i < classes.get$length(); i++) {
-      buff.add(("  static String get " + dartNames.$index(i) + "() => \"" + classes.$index(i) + "\";\r"));
+      buff.add(("  static String get " + dartNames.$index(i) + "() => \"" + classes.$index(i) + "\";\n"));
     }
   }
   return buff.toString();
 }
 Codegen._emitClass = function(className, params, content, addStylesheetFuncName) {
   var buff = new StringBufferImpl("");
-  buff.add(("class " + className + " {\r"));
-  buff.add("  Element _fragment;\r\r");
+  buff.add(("class " + className + " {\n"));
+  buff.add("  Map<String, Object> _scopes;\n");
+  buff.add("  Element _fragment;\n\n");
   var anyParams = false;
   for (var $$i = params.iterator(); $$i.hasNext(); ) {
     var param = $$i.next$0();
-    buff.add(("  " + param.$index("type") + " " + param.$index("name") + ";\r"));
+    buff.add(("  " + param.$index("type") + " " + param.$index("name") + ";\n"));
     anyParams = true;
   }
-  if (anyParams) buff.add("\r");
+  if (anyParams) buff.add("\n");
   var ecg = new ElemCG();
-  ecg.pushBlock((4), (0));
-  ecg.emitConstructHtml(content.html.children.$index((0)), "", "_fragment", (0), false);
+  if (!ecg.pushBlock((4), (0))) {
+    $globals.world.error(("Error at " + content));
+  }
+  var root = content.html.children.$index((0));
+  var firstTime = true;
+  var $$list = root.get$children();
+  for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
+    var child = $$i.next$0();
+    if ((child instanceof TemplateText)) {
+      if (!firstTime) {
+        ecg.closeStatement();
+      }
+      var stmt = ecg.pushStatement(child, "_fragment");
+    }
+    ecg.emitConstructHtml(child, "", "_fragment", (0), false);
+    firstTime = false;
+  }
   var decls = ecg.get$globalDeclarations();
   if (decls.length > (0)) {
-    buff.add("\r  // Elements bound to a variable:\r");
-    buff.add(("" + decls + "\r"));
+    buff.add("\n  // Elements bound to a variable:\n");
+    buff.add(("" + decls + "\n"));
   }
   buff.add(("  " + className + "("));
   var firstParam = true;
@@ -7863,48 +7926,48 @@ Codegen._emitClass = function(className, params, content, addStylesheetFuncName)
     buff.add(("this." + param.$index("name")));
     firstParam = false;
   }
-  buff.add(") {\r");
+  buff.add(") : _scopes = new Map<String, Object>() {\n");
   var initializers = ecg.get$globalInitializers();
   if (initializers.length > (0)) {
-    buff.add("    //Global initializers.\r");
-    buff.add(("" + initializers + "\r"));
+    buff.add("    //Global initializers.\n");
+    buff.add(("" + initializers + "\n"));
   }
-  buff.add("    // Insure stylesheet for template exist in the document.\r");
-  buff.add(("    " + addStylesheetFuncName + "();\r\r"));
-  buff.add("    _fragment = new Element.tag('div');\r");
+  buff.add("    // Insure stylesheet for template exist in the document.\n");
+  buff.add(("    " + addStylesheetFuncName + "();\n\n"));
+  buff.add("    _fragment = new DocumentFragment();\n");
   buff.add(ecg.get$codeBody());
-  buff.add("  }\r\r");
-  buff.add("  Element get root() => _fragment.nodes.first;\r");
+  buff.add("  }\n\n");
+  buff.add("  Element get root() => _fragment;\n");
   buff.add(Codegen._emitCSSSelectors(content.css));
-  buff.add("\r  // Injection functions:");
+  buff.add("\n  // Injection functions:");
   var $$list = ecg.expressions;
   for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
     var expr = $$i.next$0();
     buff.add(("" + expr));
   }
-  buff.add("\r  // Each functions:\r");
+  buff.add("\n  // Each functions:\n");
   var $$list = ecg.eachs;
   for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
     var eachFunc = $$i.next$0();
-    buff.add(("" + eachFunc + "\r"));
+    buff.add(("" + eachFunc + "\n"));
   }
-  buff.add("\r  // With functions:\r");
+  buff.add("\n  // With functions:\n");
   var $$list = ecg.withs;
   for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
     var withFunc = $$i.next$0();
-    buff.add(("" + withFunc + "\r"));
+    buff.add(("" + withFunc + "\n"));
   }
-  buff.add("\r  // CSS for this template.\r");
+  buff.add("\n  // CSS for this template.\n");
   buff.add("  static final String stylesheet = ");
   if (content.css != null) {
-    buff.add(("'''\r    " + content.css.toString() + "\r"));
-    buff.add("  ''';\r\r");
-    buff.add("  // Stylesheet class selectors:\r");
+    buff.add(("'''\n    " + content.css.toString() + "\n"));
+    buff.add("  ''';\n\n");
+    buff.add("  // Stylesheet class selectors:\n");
   }
   else {
-    buff.add("\"\";\r");
+    buff.add("\"\";\n");
   }
-  buff.add("}\r");
+  buff.add("}\n");
   return buff.toString();
 }
 // ********** Code for ElemCG **************
@@ -7917,6 +7980,51 @@ function ElemCG() {
   this._globalDecls = new StringBufferImpl("");
   this._globalInits = new StringBufferImpl("");
 }
+ElemCG.prototype.activeBlocksLocalNames = function() {
+  var result = [];
+  var $$list = this._cgBlocks;
+  for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
+    var block = $$i.next$0();
+    if (block.get$isEach() || block.get$isWith()) {
+      if (block.get$hasLocalName()) {
+        result.add(block.get$localName());
+      }
+    }
+  }
+  return result;
+}
+ElemCG.prototype.matchBlocksLocalName = function(name) {
+  var $$list = this._cgBlocks;
+  for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
+    var block = $$i.next$0();
+    if (block.get$isEach() || block.get$isWith()) {
+      if (block.get$hasLocalName() && block.get$localName() == name) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+ElemCG.prototype.isNestedBlock = function() {
+  var $$list = this._cgBlocks;
+  for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
+    var block = $$i.next$0();
+    if (block.get$isEach() || block.get$isWith()) {
+      return true;
+    }
+  }
+  return false;
+}
+ElemCG.prototype.isNestedNamedBlock = function() {
+  var $$list = this._cgBlocks;
+  for (var $$i = $$list.iterator(); $$i.hasNext(); ) {
+    var block = $$i.next$0();
+    if ((block.get$isEach() || block.get$isWith()) && block.get$hasLocalName()) {
+      return true;
+    }
+  }
+  return false;
+}
 ElemCG.prototype.anyEachBlocks = function(blockToCreateType) {
   var result = blockToCreateType == (1);
   var $$list = this._cgBlocks;
@@ -7928,9 +8036,18 @@ ElemCG.prototype.anyEachBlocks = function(blockToCreateType) {
   }
   return result;
 }
-ElemCG.prototype.pushBlock = function(indent, blockType) {
+ElemCG.prototype.pushBlock = function(indent, blockType, itemName) {
   this.closeStatement();
-  this._cgBlocks.add(new CGBlock(indent, blockType, this.anyEachBlocks(blockType)));
+  if (itemName != null && this.matchBlocksLocalName(itemName)) {
+    $globals.world.error(("Active block already exist with local name: " + itemName + "."));
+    return false;
+  }
+  else if (itemName == null && this.isNestedBlock()) {
+    $globals.world.error("Nested #each or #with must have a localName;\n \n  #each list [localName]\n  #with object [localName]");
+    return false;
+  }
+  this._cgBlocks.add(new CGBlock(indent, blockType, this.anyEachBlocks(blockType), itemName));
+  return true;
 }
 ElemCG.prototype.popBlock = function() {
   this._globalDecls.add(this.get$lastBlock().get$globalDeclarations());
@@ -7996,6 +8113,7 @@ ElemCG.prototype.emitElement = function(elem, scopeName, parentVarOrIdx, immedia
         this.emitElement(childElem, scopeName, parentVarOrIdx, false);
       }
     }
+    this.closeStatement();
   }
   else if ((elem instanceof TemplateText)) {
     this.add(("" + elem.get$value()));
@@ -8004,10 +8122,13 @@ ElemCG.prototype.emitElement = function(elem, scopeName, parentVarOrIdx, immedia
     this.emitExpressions(elem, scopeName);
   }
   else if ((elem instanceof TemplateEachCommand)) {
-    this.emitEach(elem, "List", elem.get$listName().get$name(), "parent", immediateNestedEach);
+    this.emitEach(elem, "List", elem.get$listName().get$name(), "parent", immediateNestedEach, elem.get$hasLoopItem() ? elem.get$loopItem().get$name() : null);
   }
   else if ((elem instanceof TemplateWithCommand)) {
-    this.emitWith(elem, "var", elem.get$objectName().get$name(), "parent");
+    this.emitWith(elem, "var", elem.get$objectName().get$name(), "parent", elem.get$hasBlockItem() ? elem.get$blockItem().get$name() : null);
+  }
+  else if ((elem instanceof TemplateCall)) {
+    this.emitCall(elem, parentVarOrIdx);
   }
 }
 ElemCG.prototype._resolveNames = function(expr, prefixPart) {
@@ -8040,9 +8161,6 @@ ElemCG.prototype._resolveNames = function(expr, prefixPart) {
 }
 ElemCG.prototype.emitConstructHtml = function(elem, scopeName, parentName, varIndex, immediateNestedEach) {
   if ((elem instanceof TemplateElement)) {
-    if (elem.get$isFragment()) {
-      elem = elem.get$children().$index((0));
-    }
     var stmt = this.pushStatement(elem, parentName);
     this.emitElement(elem, scopeName, stmt.get$hasGlobalVariable() ? stmt.get$variableName() : varIndex, false);
   }
@@ -8054,35 +8172,49 @@ ElemCG.prototype.eachIterNameToItem = function(iterName) {
   var newName = iterName;
   var dotForIter = iterName.indexOf(".");
   if ($gte$(dotForIter, (0))) {
-    newName = ("item" + iterName.substring(dotForIter));
+    newName = ("_item" + iterName.substring(dotForIter));
   }
   return newName;
 }
 ElemCG.prototype.emitExpressions = function(elem, scopeName) {
   var func = new StringBufferImpl("");
   var newExpr = elem.expression;
-  if (scopeName.length > (0)) {
-    this.add(("${inject_" + this.expressions.get$length() + "(item)}"));
-    func.add(("\r  String inject_" + this.expressions.get$length() + "(var item) {\r"));
-    newExpr = this._resolveNames(newExpr.replaceAll("'", "\\'"), "item");
+  var anyNesting = this.isNestedNamedBlock();
+  if (scopeName.length > (0) && !anyNesting) {
+    this.add(("${inject_" + this.expressions.get$length() + "(_item)}"));
+    func.add(("\n  String inject_" + this.expressions.get$length() + "(var _item) {\n"));
+    newExpr = this._resolveNames(newExpr.replaceAll("'", "\\'"), "_item");
   }
   else {
     this.add(("${inject_" + this.expressions.get$length() + "()}"));
-    func.add(("\r  String inject_" + this.expressions.get$length() + "() {\r"));
+    func.add(("\n  String inject_" + this.expressions.get$length() + "() {\n"));
+    if (anyNesting) {
+      func.add(this.defineScopes());
+    }
   }
-  func.add(("    return safeHTML('${" + newExpr + "}');\r"));
-  func.add("  }\r");
+  func.add(("    return safeHTML('${" + newExpr + "}');\n"));
+  func.add("  }\n");
   this.expressions.add(func.toString());
 }
-ElemCG.prototype.emitEach = function(elem, iterType, iterName, parentVarOrIdx, nestedImmediateEach) {
+ElemCG.prototype.emitCall = function(elem, scopeName) {
+  this.pushStatement(elem, scopeName);
+}
+ElemCG.prototype.emitEach = function(elem, iterType, iterName, parentVarOrIdx, nestedImmediateEach, itemName) {
   var docFrag = elem.documentFragment;
   var eachIndex = this.eachs.get$length();
   this.eachs.add("");
   var funcBuff = new StringBufferImpl("");
   var funcName = ("each_" + eachIndex);
-  funcBuff.add(("  " + funcName + "(" + iterType + " items, Element parent) {\r"));
-  funcBuff.add("    for (var item in items) {\r");
-  this.pushBlock((6), (1));
+  funcBuff.add(("  " + funcName + "(" + iterType + " items, Element parent) {\n"));
+  var paramName = this.injectParamName(itemName);
+  if (paramName == null) {
+    $globals.world.error(("Use a different local name; " + itemName + " is reserved."));
+  }
+  funcBuff.add(("    for (var " + paramName + " in items) {\n"));
+  if (!this.pushBlock((6), (1), itemName)) {
+    $globals.world.error(("Error at " + elem));
+  }
+  this.addScope((6), funcBuff, itemName);
   var docFragChild = docFrag.children.$index((0));
   var children = docFragChild.get$isFragment() ? docFragChild.children : docFrag.children;
   for (var $$i = children.iterator(); $$i.hasNext(); ) {
@@ -8091,35 +8223,78 @@ ElemCG.prototype.emitEach = function(elem, iterType, iterName, parentVarOrIdx, n
     this.emitConstructHtml(child, iterName, parentVarOrIdx, (0), eachChild);
   }
   funcBuff.add(this.get$codeBody());
+  this.removeScope((6), funcBuff, itemName);
   this.popBlock();
-  funcBuff.add("    }\r");
-  funcBuff.add("  }\r");
+  funcBuff.add("    }\n");
+  funcBuff.add("  }\n");
   this.eachs.$setindex(eachIndex, funcBuff.toString());
   var varName = nestedImmediateEach ? "parent" : this.get$lastBlock().get$last().get$variableName();
   this.pushExactStatement(elem, parentVarOrIdx);
-  this.add(("" + funcName + "(" + this.eachIterNameToItem(iterName) + ", " + varName + ")"));
+  var eachParam = (itemName == null) ? this.eachIterNameToItem(iterName) : iterName;
+  this.add(("" + funcName + "(" + eachParam + ", " + varName + ")"));
 }
-ElemCG.prototype.emitWith = function(elem, withType, withName, parentVarIndex) {
+ElemCG.prototype.emitWith = function(elem, withType, withName, parentVarIndex, itemName) {
   var docFrag = elem.documentFragment;
   var withIndex = this.withs.get$length();
   this.withs.add("");
   var funcBuff = new StringBufferImpl("");
   var funcName = ("with_" + withIndex);
-  funcBuff.add(("  " + funcName + "(" + withType + " item, Element parent) {\r"));
-  this.pushBlock((2), (0));
+  var paramName = this.injectParamName(itemName);
+  if (paramName == null) {
+    $globals.world.error(("Use a different local name; " + itemName + " is reserved."));
+  }
+  funcBuff.add(("  " + funcName + "(" + withType + " " + paramName + ", Element parent) {\n"));
+  if (!this.pushBlock((4), (2), itemName)) {
+    $globals.world.error(("Error at " + elem));
+  }
   var docFragChild = docFrag.children.$index((0));
   var children = docFragChild.get$isFragment() ? docFragChild.children : docFrag.children;
   for (var $$i = children.iterator(); $$i.hasNext(); ) {
     var child = $$i.next$0();
     this.emitConstructHtml(child, withName, "parent", (0), false);
   }
+  this.addScope((4), funcBuff, itemName);
   funcBuff.add(this.get$codeBody());
+  this.removeScope((4), funcBuff, itemName);
   this.popBlock();
-  funcBuff.add("  }\r");
+  funcBuff.add("  }\n");
   this.withs.$setindex(withIndex, funcBuff.toString());
   var varName = this.get$lastBlock().get$last().get$variableName();
   this.pushExactStatement(elem, parentVarIndex);
   this.add(("" + funcName + "(" + withName + ", " + varName + ")"));
+}
+ElemCG.prototype.injectParamName = function(name) {
+  if (name != null && name == "_item") {
+    return null;
+  }
+  return (name == null) ? "_item" : name;
+}
+ElemCG.prototype.addScope = function(indent, buff, item) {
+  var spaces = Codegen.spaces(indent);
+  if (item == null) {
+    item = "_item";
+  }
+  buff.add(("" + spaces + "_scopes[\"" + item + "\"] = " + item + ";\n"));
+}
+ElemCG.prototype.removeScope = function(indent, buff, item) {
+  var spaces = Codegen.spaces(indent);
+  if (item == null) {
+    item = "_item";
+  }
+  buff.add(("" + spaces + "_scopes.remove(\"" + item + "\");\n"));
+}
+ElemCG.prototype.defineScopes = function() {
+  var buff = new StringBufferImpl("");
+  var names = this.activeBlocksLocalNames();
+  if (names.get$length() > (0)) {
+    buff.add("    // Local scoped block names.\n");
+    for (var $$i = names.iterator(); $$i.hasNext(); ) {
+      var name = $$i.next$0();
+      buff.add(("    var " + name + " = _scopes[\"" + name + "\"];\n"));
+    }
+    buff.add("\n");
+  }
+  return buff.toString();
 }
 ElemCG.prototype.add$1 = ElemCG.prototype.add;
 // ********** Code for ASTNode **************
@@ -8242,6 +8417,7 @@ function TemplateSignature(name, params, span) {
   ASTNode.call(this, span);
 }
 TemplateSignature.prototype.get$name = function() { return this.name; };
+TemplateSignature.prototype.get$params = function() { return this.params; };
 TemplateSignature.prototype.visit = function(visitor) {
   return visitor.visitTemplateSignature(this);
 }
@@ -8418,31 +8594,62 @@ TemplateExpression.prototype.toString = function() {
 }
 // ********** Code for TemplateEachCommand **************
 $inherits(TemplateEachCommand, ASTNode);
-function TemplateEachCommand(listName, documentFragment, span) {
+function TemplateEachCommand(listName, loopItem, documentFragment, span) {
   this.listName = listName;
+  this.loopItem = loopItem;
   this.documentFragment = documentFragment;
   ASTNode.call(this, span);
 }
 TemplateEachCommand.prototype.get$listName = function() { return this.listName; };
+TemplateEachCommand.prototype.get$loopItem = function() { return this.loopItem; };
+TemplateEachCommand.prototype.get$hasLoopItem = function() {
+  return this.loopItem != null;
+}
+TemplateEachCommand.prototype.get$loopNameOptional = function() {
+  return this.get$hasLoopItem() ? (" " + this.loopItem) : "";
+}
 TemplateEachCommand.prototype.visit = function(visitor) {
   return visitor.visitTemplateEachCommand(this);
 }
 TemplateEachCommand.prototype.toString = function() {
-  return ("${#each " + this.listName + "}");
+  return ("${#each " + this.listName + this.get$loopNameOptional() + "}");
 }
 // ********** Code for TemplateWithCommand **************
 $inherits(TemplateWithCommand, ASTNode);
-function TemplateWithCommand(objectName, documentFragment, span) {
+function TemplateWithCommand(objectName, blockItem, documentFragment, span) {
   this.objectName = objectName;
+  this.blockItem = blockItem;
   this.documentFragment = documentFragment;
   ASTNode.call(this, span);
 }
 TemplateWithCommand.prototype.get$objectName = function() { return this.objectName; };
+TemplateWithCommand.prototype.get$blockItem = function() { return this.blockItem; };
+TemplateWithCommand.prototype.get$hasBlockItem = function() {
+  return this.blockItem != null;
+}
+TemplateWithCommand.prototype.get$blockNameOptional = function() {
+  return this.get$hasBlockItem() ? (" " + this.blockItem) : "";
+}
 TemplateWithCommand.prototype.visit = function(visitor) {
   return visitor.visitTemplateWithCommand(this);
 }
 TemplateWithCommand.prototype.toString = function() {
-  return ("${#with " + this.objectName + "}");
+  return ("${#with " + this.objectName + this.get$blockNameOptional() + "}");
+}
+// ********** Code for TemplateCall **************
+$inherits(TemplateCall, ASTNode);
+function TemplateCall(toCall, params, span) {
+  this.toCall = toCall;
+  this.params = params;
+  ASTNode.call(this, span);
+}
+TemplateCall.prototype.get$toCall = function() { return this.toCall; };
+TemplateCall.prototype.get$params = function() { return this.params; };
+TemplateCall.prototype.visit = function(visitor) {
+  return visitor.visitTemplateCall(this);
+}
+TemplateCall.prototype.toString = function() {
+  return ("${#" + this.toCall + this.params + "}");
 }
 // ********** Code for TreePrinter **************
 function TreePrinter(output) {
@@ -8526,6 +8733,11 @@ TreePrinter.prototype.visitTemplateWithCommand = function(node) {
   this.output.heading$2("#with", node.span);
   this.output.writeValue("object", node.objectName);
   this.visitTemplateDocument(node.documentFragment);
+}
+TreePrinter.prototype.visitTemplateCall = function(node) {
+  this.output.heading$2("#call template", node.span);
+  this.output.writeValue("templateToCall", node.toCall);
+  this.output.writeValue("params", node.params);
 }
 // ********** Code for TemplateOptions **************
 function TemplateOptions(args, files) {
@@ -8651,6 +8863,10 @@ World.prototype._template_message = function(color, prefix, message, span, span1
   if (throwing) {
     $throw(new CompilerException($add$(prefix, message), span));
   }
+}
+World.prototype.error = function(message, span, span1, span2) {
+  this.errors++;
+  this._template_message($globals._RED_COLOR, "error: ", message, span, span1, span2, $globals.options.throwOnErrors);
 }
 World.prototype.fatal = function(message, span, span1, span2) {
   this.errors++;
