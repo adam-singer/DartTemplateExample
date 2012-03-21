@@ -1,0 +1,15 @@
+template Hello(String to, List fruits) {
+  <div var=hello>
+    <p var=p>${to}</p>
+    <p>My favorite fruits are:</p>
+    ${#Fruit(fruits)}
+  </div>
+}
+
+template Fruit(List fruits) {
+  <ul>
+    ${#each fruits fruit}
+    <li>I do love eating a fresh, ripe ${fruit}</li>
+    ${/each}
+  </ul>
+}

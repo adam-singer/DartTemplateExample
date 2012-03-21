@@ -1,5 +1,6 @@
 #import('dart:html');
 #source('DivisionSales.dart');
+#source('FruitTemplate.dart');
 
 class Sales {
   String country;
@@ -35,6 +36,11 @@ class DartTemplateExample {
     
     DivisionSales divisionSales = new DivisionSales(divisions);
     document.body.elements.add(divisionSales.root);
+    
+    List fruits = ['apples', 'oranges', 'bananas'];
+    Hello hello = new Hello("Bob", fruits);
+    hello.p.on.click.add((e) => print('clicked on paragraph!'));
+    document.body.elements.add(hello.root);
   }
 }
 

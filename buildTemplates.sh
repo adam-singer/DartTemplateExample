@@ -24,8 +24,8 @@ echo
 echo "Building dart templates"
 echo 
 
-LIST="$(ls *.tmpl)"
-for i in "$LIST"; do
+
+for i in $(find . -name '*.tmpl'); do
      dartTemplateName=`echo $i|sed 's/\.tmpl$//g'`
      $DART_REPO/utils/template/template ${dartTemplateName}
 done
@@ -33,8 +33,8 @@ done
 echo
 echo "Copy & Paste import statements"
 echo 
-for i in "$LIST"; do
-     dartTemplateName=`echo $i|sed 's/\.tmpl$//g'`
+for i in $(find . -name '*.tmpl'); do
+     dartTemplateName=`echo $i|sed 's/\.tmpl$//g'|sed 's/^\.\///g'`
      echo \#source\(\'${dartTemplateName}.dart\'\)\;
 done
 

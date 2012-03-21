@@ -60,24 +60,24 @@ template DivisionSales(var divisions) {
     }
   }
   <div>
-    ${#each divisions}
+    ${#each divisions div}
       <div class="division-item">
-        <span>${name}</span>
+        <span>${div.name}</span>
         <span>&nbsp;-&nbsp;</span>
-        <span>${id}</span>
+        <span>${div.id}</span>
       </div>
       <div>
-        ${#each divisions.products}
+        ${#each div.products divProd}
           <div class="product-item">
             <span var=productZippy class="expand-collapse expand">&#9660;</span>
             <span class='product-title'>Product</span>
-            <span class="product-name">${name}</span>
-            <span class="product-users">${users}&nbsp;</span> 
+            <span class="product-name">${divProd.name}</span>
+            <span class="product-users">${divProd.users}&nbsp;</span> 
             <div class="show-sales">
-              ${#each products.sales}
+              ${#each divProd.sales divProdSales}
                 <div class="sales-item">
-                  <span>${country}</span>
-                  <span class="ytd-sales">${yearly}</span>
+                  <span>${divProdSales.country}</span>
+                  <span class="ytd-sales">${divProdSales.yearly}</span>
                 </div>
               ${/each}
             </div>
